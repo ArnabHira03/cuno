@@ -14,7 +14,7 @@ Backend (Python 3.14, managed with uv):
 uv sync                                   # install deps (incl. dev group)
 uv run cuno                               # run server on :8000 (serves web/dist if built)
 uv run pytest                             # all tests
-uv run pytest tests/test_engine.py::test_name -x   # single test
+uv run pytest tests/test_engine.py::test_skip -x   # single test (tests/test_rooms.py covers rooms + WebSocket)
 ```
 
 Frontend (`web/`, Svelte 5 + Vite + TypeScript):
@@ -39,5 +39,8 @@ browser (Svelte) ──WebSocket JSON──► server.py ─► rooms.py (Room, 
 - **Stale actions:** each snapshot carries a `version`. Turn actions include `seq` (the version the client saw), and a mismatch is rejected with a fresh snapshot.
 - **Identity and reconnecting:** there are no accounts. On `join` the server issues a `token`, which the client keeps in `localStorage` per room code. Rejoining with that token reclaims the same seat and hand. Disconnected seats stay in the game, and the turn timer auto-plays (draw + pass) for them.
 - **Rooms live only in memory** (`RoomManager`). Empty rooms are removed after a grace period. There is no database.
-- **Frontend:** `web/src/lib/socket.ts` owns the WebSocket (auto-reconnect, rejoin with token), and `store.svelte.ts` holds the latest snapshot and a queue of events. Components render from the store. Card flights use Svelte `crossfade` keyed by card id, and hand reflow uses `animate:flip`. Respect `prefers-reduced-motion`.
+- **Frontend state:** `web/src/lib/client.svelte.ts` owns the WebSocket (auto-reconnect with backoff, rejoin with token, adds `seq` to sequenced actions) and holds the latest `RoomState`. Components render only from `client.state`. The turn timer is sent as a relative `time_left_ms`, and the client converts it to a local `client.deadline`.
+- **Animations (`fx.svelte.ts`):** the client calls `fx.before(events)` before rendering a new snapshot and `fx.after(events)` after it. `before` records where your hand cards are and hides the cards that are about to arrive (`hiddenTop`, `hiddenHand`). `after` flies temporary `Card` instances between `[data-pile=draw|discard]`, `[data-seat-anchor=N]` and `[data-hand] [data-card-id=…]` using the Web Animations API, then un-hides them. Anything new that should be animated needs these data attributes. Seat effects and toasts are also driven by `fx`. Hand reflow uses `animate:flip`. Respect `prefers-reduced-motion`.
+- **Layout:** `Table.svelte` puts opponents around an ellipse in play order (the next player sits on your left). It switches to a scrolling strip of chips (`compact`, passed down to `Seat`) based on the measured felt size and the player count, not only the viewport width. Card sizes come from the `--card-lg`/`--card-md` CSS variables set in `App.svelte`. `Card.svelte` sizes its insides with `cqw` units, which resolve against the `.card` container element, so styles go on `.face`, not `.card`.
 - **Protocol:** message shapes are defined in `src/cuno/protocol.py` and mirrored by hand in `web/src/lib/types.ts`. Change both together.
+- **Deploy:** the `Dockerfile` builds `web/dist`, then runs `uv run cuno`, which serves the SPA (unknown paths fall back to `index.html` for `/r/CODE` links). Rooms live in memory, so run a single instance.

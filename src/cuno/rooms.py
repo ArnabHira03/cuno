@@ -93,7 +93,8 @@ class Room:
                 for i, p in enumerate(self.players)
             ],
             "turn_seconds": self.turn_seconds,
-            "deadline": int(self.deadline * 1000) if self.deadline else None,
+            # Relative, so client/server clock skew doesn't matter.
+            "time_left_ms": max(0, int((self.deadline - time.time()) * 1000)) if self.deadline else None,
             "game": snapshot_for(self.game, seat) if self.game else None,
         }
 
