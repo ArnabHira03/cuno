@@ -1,0 +1,43 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+Cuno is a browser-based, room-code multiplayer Uno-style card game for 2–10 friends playing remotely. The design spec is `docs/superpowers/specs/2026-11-15-cuno-design.md`. Game rules live in `cuno_rules.md`, which is the source of truth for the engine: if the code and that file disagree, one of them is a bug. Card art and branding must stay original (no "UNO" wordmark or Mattel-style oval logo).
+
+## Commands
+
+Backend (Python 3.14, managed with uv):
+
+```bash
+uv sync                                   # install deps (incl. dev group)
+uv run cuno                               # run server on :8000 (serves web/dist if built)
+uv run pytest                             # all tests
+uv run pytest tests/test_engine.py::test_name -x   # single test
+```
+
+Frontend (`web/`, Svelte 5 + Vite + TypeScript):
+
+```bash
+cd web && npm install
+npm run dev        # Vite on :5173, proxies /api and /ws to :8000 (run `uv run cuno` too)
+npm run build      # outputs web/dist, which FastAPI serves in production
+npm run check      # svelte-check type checking
+```
+
+## Architecture
+
+```
+browser (Svelte) ──WebSocket JSON──► server.py ─► rooms.py (Room, RoomManager) ─► engine.py (Game)
+                 ◄── per-player snapshot + events ──
+```
+
+- **`engine.py` is pure.** It has no I/O and no asyncio. `Game.apply(seat, action)` validates the action (raising `IllegalMove`), mutates the state, and returns a list of event dicts. Randomness comes through an injected `random.Random` so tests are deterministic. All rule logic belongs here, not in the server or the client.
+- **The server is authoritative and sends full snapshots.** After every accepted action, `Room` broadcasts to each connection `views.snapshot_for(game, seat)` (that player's own hand plus only the counts of other players' hands) together with the `events` from that action. Clients never compute game state; they render snapshots and use `events` only to drive animations. Never put another player's cards into a snapshot.
+- **Concurrency:** each `Room` serialises actions with its own `asyncio.Lock`. Ordering races (an UNO call against a Catch) are decided by arrival order at the lock.
+- **Stale actions:** each snapshot carries a `version`. Turn actions include `seq` (the version the client saw), and a mismatch is rejected with a fresh snapshot.
+- **Identity and reconnecting:** there are no accounts. On `join` the server issues a `token`, which the client keeps in `localStorage` per room code. Rejoining with that token reclaims the same seat and hand. Disconnected seats stay in the game, and the turn timer auto-plays (draw + pass) for them.
+- **Rooms live only in memory** (`RoomManager`). Empty rooms are removed after a grace period. There is no database.
+- **Frontend:** `web/src/lib/socket.ts` owns the WebSocket (auto-reconnect, rejoin with token), and `store.svelte.ts` holds the latest snapshot and a queue of events. Components render from the store. Card flights use Svelte `crossfade` keyed by card id, and hand reflow uses `animate:flip`. Respect `prefers-reduced-motion`.
+- **Protocol:** message shapes are defined in `src/cuno/protocol.py` and mirrored by hand in `web/src/lib/types.ts`. Change both together.
