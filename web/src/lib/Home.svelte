@@ -1,5 +1,6 @@
 <script lang="ts">
   import Card from './Card.svelte';
+  import { storageGet } from './client.svelte';
   import type { Card as CardT } from './types';
 
   let {
@@ -23,6 +24,27 @@
   let code = $state(initialCode);
   const nameOk = $derived(name.trim().length > 0);
   const codeOk = $derived(/^[A-Za-z]{4}$/.test(code.trim()));
+
+  // A room whose game is already running: joining it means watching (unless we hold a seat there).
+  let watching = $state(false);
+  $effect(() => {
+    const c = code.trim().toUpperCase();
+    watching = false;
+    if (!/^[A-Z]{4}$/.test(c) || storageGet(`cuno:token:${c}`)) return;
+    let live = true;
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/rooms/${c}`);
+        if (res.ok && live) watching = (await res.json()).phase !== 'lobby';
+      } catch {
+        /* offline: keep "Join" */
+      }
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  });
 
   const hero: CardT[] = [
     { id: -1, kind: 'number', color: 'red', value: 7 },
@@ -71,14 +93,21 @@
         disabled={!nameOk || !codeOk || busy}
         onclick={() => onenter(code.trim().toUpperCase(), name.trim())}
       >
-        Join
+        {watching ? 'Watch' : 'Join'}
       </button>
     </div>
+    {#if watching}<p class="hint">This game has started, so you'll join as a spectator.</p>{/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </form>
 </div>
 
 <style>
+  .hint {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+
   .home {
     min-height: 100dvh;
     display: flex;

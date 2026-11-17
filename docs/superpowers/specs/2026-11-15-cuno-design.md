@@ -97,4 +97,4 @@ After approval, the next step is to save this design as `docs/superpowers/specs/
 - **Real network:** expose the dev server through a tunnel and play one game with friends on phones.
 
 ## Non-goals (for now)
-House rules, accounts and persistence, spectators or mid-game joins, voice and text chat, sound effects, using Mattel branding or art.
+House rules, accounts and persistence, mid-game joins as a player (spectators are now covered by `2026-11-17-spectator-mode-design.md`), voice and text chat, sound effects, using Mattel branding or art.
