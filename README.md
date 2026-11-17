@@ -8,7 +8,7 @@ It follows the standard rules of the classic colour-matching card game. The full
 
 - Rooms with a 4-letter code and an invite link (`/r/ABCD`)
 - A server-authoritative engine: you never see other players' cards
-- Wild Draw Four challenges, the UNO call and Catch, scoring to 500
+- Wild Draw Four challenges, the CUNO call and Catch, scoring to 500
 - Refresh or lose Wi-Fi and you rejoin with your hand intact. Absent players are auto-played by a turn timer
 - Animated card flights, a turn countdown ring, a direction indicator, light and dark themes, phone layouts
 

@@ -331,9 +331,9 @@ class Game:
 
     def _call_uno(self, seat: int) -> list[Event]:
         if len(self.hands[seat]) not in (1, 2):
-            raise IllegalMove("cant_call_uno", "You can only call UNO with one or two cards.")
+            raise IllegalMove("cant_call_uno", "You can only call CUNO with one or two cards.")
         if self.uno_called[seat]:
-            raise IllegalMove("already_called", "You already called UNO.")
+            raise IllegalMove("already_called", "You already called CUNO.")
         self.uno_called[seat] = True
         if self.uno_vulnerable == seat:
             self.uno_vulnerable = None

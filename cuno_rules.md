@@ -87,9 +87,9 @@ The player hit by a Wild Draw Four may **challenge** it, claiming it was played 
 
 ---
 
-## 5. Calling "UNO"
+## 5. Calling "CUNO"
 
-- When you play your **second-to-last card**, leaving one card in hand, you must call **"UNO"**.
+- When you play your **second-to-last card**, leaving one card in hand, you must call **"CUNO"**.
 - If another player catches you **before the next player starts their turn**, you draw **2 cards** as a penalty.
 - Once the next player has started their turn, you can no longer be penalised for that missed call.
 
@@ -133,7 +133,7 @@ These are popular but **not** part of the standard rules, so Cuno leaves them ou
 These rules have no face-to-face equivalent online, so Cuno has to define them. They are proposals, not settled:
 
 - **Choosing the dealer:** the server picks one at random instead of having everyone draw a card.
-- **Calling UNO:** a button you press while (or right after) playing your second-to-last card. Other players get a "Catch!" button that stays active until the next player acts. The server decides who was first.
-- **Challenge window:** after a Wild Draw Four, the victim is offered Challenge / Accept, and the server decides the challenge by checking the offender's hand internally. Only the verdict (guilty or innocent) is sent to players.
+- **Calling CUNO:** a button you press while (or right after) playing your second-to-last card. Other players get a "Catch!" button that stays active until the next player acts. The server decides who was first.
+- **Challenge window:** after a Wild Draw Four, the victim is offered Challenge / Accept, and the server reveals the hand only to the challenger.
 - **Turn timer:** if a player doesn't act in time, they automatically draw and pass.
 - **Disconnects:** a disconnected player keeps their seat and hand. Their turns are auto-passed until they reconnect.

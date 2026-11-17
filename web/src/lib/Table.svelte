@@ -181,9 +181,9 @@
           <button class="btn" onclick={() => client.send({ type: 'draw' })}>Draw <kbd>D</kbd></button>
         {/if}
         {#if unoAvailable}
-          <button class="btn uno" class:urgent={unoUrgent} onclick={() => client.send({ type: 'call_uno' })}>UNO!</button>
+          <button class="btn uno" class:urgent={unoUrgent} onclick={() => client.send({ type: 'call_uno' })}>CUNO</button>
         {:else if playing && g.uno_called[me] && g.hand.length <= 2}
-          <span class="called">UNO called ✓</span>
+          <span class="called">CUNO called ✓</span>
         {/if}
       </div>
     </div>
