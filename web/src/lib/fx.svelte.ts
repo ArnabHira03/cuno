@@ -25,7 +25,6 @@ class Fx {
   hiddenTop = $state<number | null>(null);
   effects = $state<Record<number, SeatEffect>>({});
   toasts = $state<Toast[]>([]);
-  reveal = $state<{ name: string; cards: CardT[] } | null>(null);
   layer: HTMLElement | null = null;
 
   private captured = new Map<number, DOMRect>();
@@ -166,7 +165,6 @@ class Fx {
             guilty ? 'good' : 'bad',
             4500,
           );
-          if (e.private?.hand) this.reveal = { name: name(e.target), cards: e.private.hand };
           break;
         }
         case 'accept':

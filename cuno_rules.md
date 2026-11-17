@@ -77,7 +77,7 @@ When the draw pile runs out, set the top discard aside, shuffle the rest of the 
 
 ### Challenging a Wild Draw Four
 
-The player hit by a Wild Draw Four may **challenge** it, claiming it was played illegally. If they do, the player who played it must privately show their hand to the challenger.
+The player hit by a Wild Draw Four may **challenge** it, claiming it was played illegally. If they do, the server checks the offender's hand itself and announces only the verdict. The hand is never shown to the challenger or anyone else.
 
 | Result | Penalty |
 |--------|---------|
