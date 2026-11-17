@@ -307,3 +307,104 @@ async def test_spectator_only_room_pauses_and_is_sweepable():
         await room.disconnect(c)
     assert room.timer is None and room.empty_since is not None
     room.close()
+
+
+async def test_spectator_follows_person_across_new_game():
+    room, conns = await started_room(3)
+    spec = FakeConn()
+    await room.join(spec, "W", None)
+    await room.handle(spec, {"type": "watch", "seat": 2})
+    await room.disconnect(conns[1])  # seat 1 will be dropped
+    room.game.phase = Phase.GAME_OVER
+    await room.handle(conns[0], {"type": "new_game"})
+    assert spec.state["phase"] == "lobby" and spec.state["role"] == "spectator"
+    assert spec.state["players"][spec.state["watching"]]["name"] == "P2"
+
+
+async def test_spectator_falls_back_to_host_when_followed_player_dropped():
+    room, conns = await started_room(3)
+    spec = FakeConn()
+    await room.join(spec, "W", None)
+    await room.handle(spec, {"type": "watch", "seat": 1})
+    await room.disconnect(conns[1])
+    room.game.phase = Phase.GAME_OVER
+    await room.handle(conns[0], {"type": "new_game"})
+    assert spec.state["watching"] == spec.state["host"]
+
+
+async def test_spectator_keeps_following_disconnected_player():
+    room, conns = await started_room(3)
+    spec = FakeConn()
+    await room.join(spec, "W", None)
+    await room.handle(spec, {"type": "watch", "seat": 1})
+    await room.disconnect(conns[1])
+    assert spec.state["watching"] == 1
+    room.close()
+
+
+async def test_spectator_token_in_lobby_stays_spectator():
+    room, conns = await started_room(2)
+    spec = FakeConn()
+    await room.join(spec, "W", None)
+    token = spec.last("welcome")["token"]
+    await room.disconnect(spec)
+    room.game.phase = Phase.GAME_OVER
+    await room.handle(conns[0], {"type": "new_game"})
+    back = FakeConn()
+    await room.join(back, "W", token)
+    assert back.state["role"] == "spectator" and len(room.players) == 2
+
+
+async def test_spectator_leave_then_rejoin_in_lobby_is_player():
+    room, conns = await started_room(2)
+    spec = FakeConn()
+    await room.join(spec, "W", None)
+    token = spec.last("welcome")["token"]
+    await room.leave(spec)
+    assert room.spectators == []
+    assert conns[0].state["spectators"] == []
+    room.game.phase = Phase.GAME_OVER
+    await room.handle(conns[0], {"type": "new_game"})
+    back = FakeConn()
+    await room.join(back, "W", token)
+    assert back.state["role"] == "player" and len(room.players) == 3
+
+
+async def test_sweep_notifies_spectators():
+    m = RoomManager(empty_ttl=0)
+    room = m.create()
+    a, b = FakeConn(), FakeConn()
+    await room.join(a, "A", None)
+    await room.join(b, "B", None)
+    await room.handle(a, {"type": "start"})
+    spec = FakeConn()
+    await room.join(spec, "W", None)
+    await room.disconnect(a)
+    await room.disconnect(b)
+    assert m.sweep(now=room.empty_since + 1) == 1
+    await asyncio.sleep(0)
+    assert spec.last("error")["code"] == "closed"
+
+
+def test_websocket_spectator_end_to_end():
+    app = create_app(static_dir=__import__("pathlib").Path("/nonexistent"))
+    client = TestClient(app)
+    code = client.post("/api/rooms").json()["code"]
+    with (
+        client.websocket_connect(f"/ws/{code}") as a,
+        client.websocket_connect(f"/ws/{code}") as b,
+        client.websocket_connect(f"/ws/{code}") as c,
+    ):
+        a.send_json({"type": "join", "name": "Ann"})
+        a.receive_json(), a.receive_json()
+        b.send_json({"type": "join", "name": "Bob"})
+        b.receive_json(), b.receive_json(), a.receive_json()
+        a.send_json({"type": "start"})
+        a.receive_json(), b.receive_json()
+        c.send_json({"type": "join", "name": "Cat"})
+        assert c.receive_json()["role"] == "spectator"
+        assert set(c.receive_json()["state"]["game"]["hands"]) == {"0", "1"}
+        assert a.receive_json()["state"]["spectators"] == ["Cat"]
+        c.send_json({"type": "leave"})
+        left = a.receive_json()
+        assert left["state"]["spectators"] == [] and left["events"][0]["type"] == "spectator_left"

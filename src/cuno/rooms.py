@@ -193,6 +193,17 @@ class Room:
         await _safe_send(conn, {"type": "welcome", "seat": None, "token": spec.token, "role": "spectator"})
         await self._broadcast([{"type": "spectator_joined", "name": spec.name}])
 
+    async def leave(self, conn: Connection) -> None:
+        """An explicit Leave. A spectator's record is dropped, so rejoining is a fresh join."""
+        async with self.lock:
+            spec = self.spectator_for(conn)
+            if spec is not None:
+                spec.conn = None
+                self.spectators.remove(spec)
+                await self._broadcast([{"type": "spectator_left", "name": spec.name}])
+                return
+        await self.disconnect(conn)
+
     async def disconnect(self, conn: Connection) -> None:
         async with self.lock:
             spec = self.spectator_for(conn)
@@ -354,6 +365,13 @@ class Room:
     def close(self) -> None:
         if self.timer is not None:
             self.timer.cancel()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        for spec in self.spectators:
+            if spec.conn is not None:
+                loop.create_task(_safe_send(spec.conn, error_message("closed", "This room has closed.")))
 
 
 async def _safe_send(conn: Connection | None, data: Any) -> None:
