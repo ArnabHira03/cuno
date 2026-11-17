@@ -77,6 +77,7 @@ def create_app(manager: RoomManager | None = None, static_dir: Path | None = Non
                     await ws.send_json(error_message("bad_message", "Malformed message."))
                     continue
                 if isinstance(raw, dict) and raw.get("type") == "leave":
+                    await room.leave(ws)
                     break
                 await room.handle(ws, raw)
         except WebSocketDisconnect:

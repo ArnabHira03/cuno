@@ -73,8 +73,15 @@ class Catch(BaseModel):
     target: int
 
 
+class Watch(BaseModel):
+    """Spectators only: follow the player in this seat."""
+
+    type: Literal["watch"]
+    seat: int
+
+
 ClientMessage = Annotated[
-    Join | Start | NextRound | NewGame | Leave | Play | Draw | Keep | ChooseColor | Challenge | Accept | CallUno | Catch,
+    Join | Start | NextRound | NewGame | Leave | Play | Draw | Keep | ChooseColor | Challenge | Accept | CallUno | Catch | Watch,
     Field(discriminator="type"),
 ]
 client_message = TypeAdapter(ClientMessage)

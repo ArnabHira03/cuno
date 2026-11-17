@@ -48,6 +48,13 @@ def snapshot_for(game: Game, seat: int) -> dict[str, Any]:
     }
 
 
+def spectator_snapshot_for(game: Game, seat: int) -> dict[str, Any]:
+    """The followed seat's view plus every hand. Only ever sent to spectators."""
+    view = snapshot_for(game, seat)
+    view["hands"] = {str(i): [c.to_dict() for c in hand] for i, hand in enumerate(game.hands)}
+    return view
+
+
 def events_for(events: list[Event], seat: int) -> list[Event]:
     """Strip private payloads that belong to another seat."""
     out: list[Event] = []

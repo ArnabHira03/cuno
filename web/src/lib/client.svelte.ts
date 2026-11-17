@@ -4,7 +4,7 @@ import type { ClientMessage, GameEvent, RoomState, ServerMessage } from './types
 
 const SEQUENCED = new Set(['play', 'draw', 'keep', 'choose_color', 'challenge', 'accept']);
 // Errors after which reconnecting is pointless.
-const FATAL = new Set(['not_found', 'in_progress', 'full', 'bad_name', 'replaced', 'not_joined']);
+const FATAL = new Set(['not_found', 'in_progress', 'full', 'bad_name', 'replaced', 'not_joined', 'closed']);
 
 export type Status = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
 
@@ -98,7 +98,13 @@ class Client {
       case 'error':
         if (FATAL.has(msg.code)) {
           this.stopped = true;
-          if (msg.code !== 'replaced') storageSet(tokenKey(this.code!), null);
+          if (msg.code !== 'replaced') {
+            storageSet(tokenKey(this.code!), null);
+            // The room is gone (e.g. swept): drop the frozen table so the home screen shows why.
+            this.state = null;
+            this.deadline = null;
+            this.ws?.close();
+          }
         }
         this.error = { code: msg.code, message: msg.message };
         break;
@@ -119,6 +125,11 @@ class Client {
     const out: Record<string, unknown> = { ...msg };
     if (SEQUENCED.has(msg.type)) out.seq = this.state?.version;
     this.ws.send(JSON.stringify(out));
+  }
+
+  /** Spectators: follow the player in this seat. */
+  watch(seat: number) {
+    this.send({ type: 'watch', seat });
   }
 
   leave() {

@@ -3,10 +3,12 @@
   import { scale } from 'svelte/transition';
   import Avatar from './Avatar.svelte';
   import { client } from './client.svelte';
+  import WatchingChip from './WatchingChip.svelte';
   import type { RoomState } from './types';
 
   let { state: s }: { state: RoomState } = $props();
-  const isHost = $derived(s.host === s.you);
+  const isHost = $derived(s.you !== null && s.host === s.you);
+  const spectator = $derived(s.role === 'spectator');
   const link = $derived(`${location.origin}/r/${s.code}`);
   let copied = $state(false);
 
@@ -34,7 +36,10 @@
     <button class="btn" onclick={copy}>{copied ? 'Link copied ✓' : 'Share invite link'}</button>
 
     <div class="players">
-      <p class="eyebrow">Players · {s.players.length}/10</p>
+      <div class="players-head">
+        <p class="eyebrow">Players · {s.players.length}/10</p>
+        <WatchingChip names={s.spectators} />
+      </div>
       <ul>
         {#each s.players as p (p.seat)}
           <li animate:flip={{ duration: 250 }} in:scale={{ start: 0.7, duration: 250 }}>
@@ -46,7 +51,9 @@
       </ul>
     </div>
 
-    {#if isHost}
+    {#if spectator}
+      <p class="wait">You're watching. Leave and rejoin to play in the next game.</p>
+    {:else if isHost}
       <button class="btn primary start" disabled={s.players.length < 2} onclick={() => client.send({ type: 'start' })}>
         {s.players.length < 2 ? 'Waiting for friends…' : `Start game (${s.players.length} players)`}
       </button>
@@ -58,6 +65,13 @@
 </div>
 
 <style>
+  .players-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
   .lobby {
     min-height: 100dvh;
     display: grid;

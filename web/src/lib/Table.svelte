@@ -1,36 +1,52 @@
 <script lang="ts">
-  import { fly as flyT } from 'svelte/transition';
+  import { fade, fly as flyT } from 'svelte/transition';
   import Avatar from './Avatar.svelte';
   import Card from './Card.svelte';
   import { client } from './client.svelte';
   import { fx } from './fx.svelte';
   import Hand from './Hand.svelte';
+  import HandsPanel from './HandsPanel.svelte';
   import Modal from './Modal.svelte';
   import Piles from './Piles.svelte';
   import RoundSummary from './RoundSummary.svelte';
   import Seat from './Seat.svelte';
-  import type { Card as CardT, Color, GameView, RoomState } from './types';
+  import { viewSeat, type Card as CardT, type Color, type GameView, type RoomState } from './types';
+  import WatchingChip from './WatchingChip.svelte';
 
   let { state: s }: { state: RoomState } = $props();
   const g = $derived(s.game as GameView);
-  const me = $derived(s.you);
+  const spectator = $derived(s.role === 'spectator');
+  // The seat the table is drawn around: yours, or the player a spectator follows.
+  const me = $derived(viewSeat(s));
   const n = $derived(s.players.length);
   const playing = $derived(g.phase === 'playing');
-  const name = (seat: number) => (seat === me ? 'You' : (s.players[seat]?.name ?? '?'));
+  /** True only for your own seat (never for a spectator). */
+  const mine = (seat: number) => !spectator && seat === me;
+  const name = (seat: number) => (mine(seat) ? 'You' : (s.players[seat]?.name ?? '?'));
 
-  const myTurn = $derived(playing && g.actor === me);
-  const canDraw = $derived(playing && g.turn === me && !g.pending && g.drawn_card_id === null);
-  const canKeep = $derived(playing && g.turn === me && !g.pending && g.drawn_card_id !== null);
-  const challengeMe = $derived(playing && g.pending?.type === 'challenge' && g.pending.victim === me);
-  const chooseMe = $derived(playing && g.pending?.type === 'choose_color' && g.pending.seat === me);
+  const myTurn = $derived(playing && mine(g.actor ?? -1));
+  /** The bottom seat (yours, or the followed player's) is the one acting: drives the turn ring, not controls. */
+  const bottomActive = $derived(playing && g.actor === me);
+  const canDraw = $derived(playing && mine(g.turn) && !g.pending && g.drawn_card_id === null);
+  const canKeep = $derived(playing && mine(g.turn) && !g.pending && g.drawn_card_id !== null);
+  const challengeMe = $derived(playing && g.pending?.type === 'challenge' && mine(g.pending.victim));
+  const chooseMe = $derived(playing && g.pending?.type === 'choose_color' && mine(g.pending.seat));
   const unoAvailable = $derived(
-    playing && g.hand.length > 0 && g.hand.length <= 2 && !g.uno_called[me],
+    !spectator && playing && g.hand.length > 0 && g.hand.length <= 2 && !g.uno_called[me],
   );
   const unoUrgent = $derived(
     unoAvailable && (g.uno_vulnerable === me || (g.hand.length === 2 && g.turn === me && g.playable.length > 0)),
   );
 
   let wildCard = $state<CardT | null>(null);
+  const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Switching who a spectator follows swaps the whole hand: drop any half-finished hand animation state.
+  let lastMe: number | null = null;
+  $effect.pre(() => {
+    if (lastMe !== null && me !== lastMe) fx.resetHand();
+    lastMe = me;
+  });
   let feltW = $state(1000);
   let feltH = $state(600);
   // Fall back to a strip of opponents when the ellipse would get crowded.
@@ -54,12 +70,12 @@
     if (!playing) return '';
     const p = g.pending;
     if (p?.type === 'challenge') {
-      return p.victim === me
+      return mine(p.victim)
         ? `${name(p.player)} played Wild +4 on you`
         : `${name(p.victim)} is deciding whether to challenge ${name(p.player)}`;
     }
-    if (p?.type === 'choose_color') return p.seat === me ? 'Pick the starting colour' : `${name(p.seat)} is choosing a colour`;
-    if (g.turn === me) {
+    if (p?.type === 'choose_color') return mine(p.seat) ? 'Pick the starting colour' : `${name(p.seat)} is choosing a colour`;
+    if (mine(g.turn)) {
       if (g.drawn_card_id !== null) return 'You can play the card you drew, or keep it';
       return g.playable.length ? 'Your turn — play a card' : 'Your turn — no match, draw a card';
     }
@@ -86,7 +102,7 @@
   });
 
   function onKey(e: KeyboardEvent) {
-    if (e.target instanceof HTMLInputElement) return;
+    if (spectator || e.target instanceof HTMLInputElement) return;
     if (e.key === 'd' && canDraw) client.send({ type: 'draw' });
     if (e.key === 'k' && canKeep) client.send({ type: 'keep' });
     if (e.key === 'u' && unoAvailable) client.send({ type: 'call_uno' });
@@ -104,7 +120,9 @@
       <span class="chip">Room <b>{s.code}</b></span>
       <span class="chip">Round {g.round}</span>
       <span class="chip hide-sm">First to {g.target_score}</span>
+      {#if spectator}<span class="chip spectating">Watching</span>{/if}
     </div>
+    <WatchingChip names={s.spectators} />
     <button class="btn ghost" onclick={() => (confirmLeave = true)}>Leave</button>
   </header>
 
@@ -125,7 +143,7 @@
             host={s.host === o.seat}
             dealer={g.dealer === o.seat}
             unoCalled={g.uno_called[o.seat]}
-            canCatch={playing && g.uno_vulnerable === o.seat}
+            canCatch={!spectator && playing && g.uno_vulnerable === o.seat}
             deadline={client.deadline}
             total={p.connected ? s.turn_seconds : 8}
             effect={fx.effects[o.seat]}
@@ -133,6 +151,7 @@
             y={o.y}
             {compact}
             oncatch={() => client.send({ type: 'catch', target: o.seat })}
+            onselect={spectator ? () => client.watch(o.seat) : undefined}
           />
         {/each}
       </div>
@@ -147,19 +166,25 @@
           {canDraw}
           ondraw={() => client.send({ type: 'draw' })}
         />
-        <p class="status" class:mine={myTurn}>{status}</p>
+        <p class="status" class:mine={myTurn}>{spectator ? `Watching ${s.players[me]?.name ?? '?'} · ${status}` : status}</p>
       </div>
+
+      {#if spectator}
+        <HandsPanel state={s} startCollapsed={compact || n > 6} />
+      {/if}
     </div>
   </main>
 
-  <section class="me" class:active={myTurn}>
+  <section class="me" class:active={bottomActive}>
+    {#key me}
+    <div class="me-swap" in:fade={{ duration: spectator && !reduced ? 150 : 0 }}>
     <div class="me-bar">
       <div class="who" data-seat-anchor={me}>
         <Avatar
           name={s.players[me].name}
           seat={me}
           size={44}
-          active={myTurn}
+          active={bottomActive}
           deadline={client.deadline}
           total={s.turn_seconds}
         />
@@ -192,11 +217,13 @@
         cards={g.hand}
         playable={g.playable}
         hidden={fx.hiddenHand}
-        myTurn={playing && g.turn === me && !g.pending}
+        myTurn={playing && mine(g.turn) && !g.pending}
         selected={wildCard?.id ?? null}
         onplay={play}
       />
     </div>
+    </div>
+    {/key}
   </section>
 
   {#if wildCard || chooseMe}
@@ -235,8 +262,12 @@
   {/if}
 
   {#if confirmLeave}
-    <Modal title="Leave the game?">
-      <p class="explain">Your seat stays in the game and plays automatically until the round ends.</p>
+    <Modal title={spectator ? 'Stop watching?' : 'Leave the game?'}>
+      <p class="explain">
+        {spectator
+          ? "You'll stop watching. Rejoining while a game is on makes you a spectator again."
+          : 'Your seat stays in the game and plays automatically until the round ends.'}
+      </p>
       <div class="row-btns">
         <button class="btn" onclick={() => (confirmLeave = false)}>Stay</button>
         <button class="btn danger" onclick={() => client.leave()}>Leave</button>
