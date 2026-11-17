@@ -148,14 +148,14 @@ class Fx {
           this.toast('Direction reversed ⟲');
           break;
         case 'uno':
-          this.effect(e.seat!, 'uno', 'UNO!');
+          this.effect(e.seat!, 'uno', 'CUNO!');
           break;
         case 'catch':
           this.effect(e.target, 'shake');
           this.toast(
             e.target === me
               ? `${name(e.seat)} caught you — draw 2!`
-              : `${name(e.seat)} caught ${name(e.target)} not calling UNO! +2`,
+              : `${name(e.seat)} caught ${name(e.target)} not calling CUNO! +2`,
             e.target === me ? 'bad' : 'good',
           );
           break;

@@ -75,7 +75,7 @@
   </div>
 
   {#if count === 1 && unoCalled}
-    <span class="uno-badge">UNO</span>
+    <span class="uno-badge">CUNO</span>
   {/if}
   {#if canCatch}
     <button class="catch" onclick={oncatch}>Catch!</button>
