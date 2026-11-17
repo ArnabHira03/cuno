@@ -266,9 +266,9 @@ def test_wild4_challenge_guilty():
     assert ch["result"] == "guilty"
     assert len(g.hands[0]) == 6 and len(g.hands[1]) == 2
     assert g.turn == 1  # challenger keeps their turn
-    # Revealed hand is private to the challenger.
-    assert "private" in events_for(events, 1)[0]
-    assert "private" not in events_for(events, 2)[0]
+    # The server checks the hand itself: nobody is shown it, not even the challenger.
+    for seat in range(3):
+        assert "private" not in events_for(events, seat)[0]
 
 
 def test_wild4_challenge_innocent():
@@ -276,6 +276,8 @@ def test_wild4_challenge_innocent():
     events = g.apply(1, {"type": "challenge"})
     assert next(e for e in events if e["type"] == "challenge")["result"] == "innocent"
     assert len(g.hands[1]) == 8 and g.turn == 2
+    for seat in range(3):
+        assert "private" not in events_for(events, seat)[0]
 
 
 def test_snapshot_hides_wild4_legality_and_other_hands():

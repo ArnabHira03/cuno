@@ -311,6 +311,7 @@ class Game:
             self.turn = self.next_seat(victim)
             return events
 
+        # The server checks the offender's hand itself; it is never shown to anyone.
         guilty = not p["legal"]
         events = [
             {
@@ -318,10 +319,6 @@ class Game:
                 "seat": victim,
                 "target": offender,
                 "result": "guilty" if guilty else "innocent",
-                "private": {
-                    "seat": victim,
-                    "hand": [c.to_dict() for c in self.hands[offender]],
-                },
             }
         ]
         if guilty:

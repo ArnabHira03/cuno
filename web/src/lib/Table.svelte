@@ -230,15 +230,6 @@
     </Modal>
   {/if}
 
-  {#if fx.reveal}
-    <Modal title="{fx.reveal.name}'s hand">
-      <div class="reveal">
-        {#each fx.reveal.cards as c (c.id)}<Card card={c} size="sm" />{/each}
-      </div>
-      <button class="btn primary cancel" onclick={() => (fx.reveal = null)}>Got it</button>
-    </Modal>
-  {/if}
-
   {#if g.phase !== 'playing' && g.last_round}
     <RoundSummary state={s} />
   {/if}
@@ -563,13 +554,6 @@
     gap: 10px;
     justify-content: center;
     margin-top: 12px;
-  }
-
-  .reveal {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    justify-content: center;
   }
 
   .toasts {
