@@ -42,6 +42,8 @@ export interface GameView {
   scores: number[];
   target_score: number;
   last_round: LastRound | null;
+  /** Spectators only: every player's hand, keyed by seat. */
+  hands?: Record<string, Card[]>;
 }
 
 export interface PlayerInfo {
@@ -54,7 +56,13 @@ export interface RoomState {
   code: string;
   version: number;
   phase: 'lobby' | GameView['phase'];
-  you: number;
+  role: 'player' | 'spectator';
+  /** Your seat; null for spectators. */
+  you: number | null;
+  /** The seat a spectator follows; null for players. */
+  watching: number | null;
+  /** Names of connected spectators. */
+  spectators: string[];
   host: number | null;
   players: PlayerInfo[];
   turn_seconds: number;
@@ -62,10 +70,15 @@ export interface RoomState {
   game: GameView | null;
 }
 
+/** The seat the table is drawn around: your own, or the one a spectator follows. */
+export function viewSeat(s: RoomState): number {
+  return s.you ?? s.watching ?? 0;
+}
+
 export type GameEvent = { type: string; seat?: number; [k: string]: any };
 
 export type ServerMessage =
-  | { type: 'welcome'; seat: number; token: string }
+  | { type: 'welcome'; seat: number | null; token: string; role: 'player' | 'spectator' }
   | { type: 'state'; state: RoomState; events: GameEvent[] }
   | { type: 'error'; code: string; message: string };
 
@@ -82,4 +95,5 @@ export type ClientMessage =
   | { type: 'challenge' }
   | { type: 'accept' }
   | { type: 'call_uno' }
-  | { type: 'catch'; target: number };
+  | { type: 'catch'; target: number }
+  | { type: 'watch'; seat: number };
