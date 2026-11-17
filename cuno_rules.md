@@ -77,7 +77,7 @@ When the draw pile runs out, set the top discard aside, shuffle the rest of the 
 
 ### Challenging a Wild Draw Four
 
-The player hit by a Wild Draw Four may **challenge** it, claiming it was played illegally. If they do, the player who played it must privately show their hand to the challenger.
+The player hit by a Wild Draw Four may **challenge** it, claiming it was played illegally. If they do, the server checks the offender's hand itself and announces only the verdict. The hand is never shown to the challenger or anyone else.
 
 | Result | Penalty |
 |--------|---------|
@@ -134,6 +134,6 @@ These rules have no face-to-face equivalent online, so Cuno has to define them. 
 
 - **Choosing the dealer:** the server picks one at random instead of having everyone draw a card.
 - **Calling UNO:** a button you press while (or right after) playing your second-to-last card. Other players get a "Catch!" button that stays active until the next player acts. The server decides who was first.
-- **Challenge window:** after a Wild Draw Four, the victim is offered Challenge / Accept, and the server reveals the hand only to the challenger.
+- **Challenge window:** after a Wild Draw Four, the victim is offered Challenge / Accept, and the server decides the challenge by checking the offender's hand internally. Only the verdict (guilty or innocent) is sent to players.
 - **Turn timer:** if a player doesn't act in time, they automatically draw and pass.
 - **Disconnects:** a disconnected player keeps their seat and hand. Their turns are auto-passed until they reconnect.
