@@ -9,7 +9,7 @@
   const g = $derived(s.game as GameView);
   const lr = $derived(g.last_round!);
   const over = $derived(g.phase === 'game_over');
-  const isHost = $derived(s.host === s.you);
+  const isHost = $derived(s.you !== null && s.host === s.you);
   const winnerName = $derived(lr.winner === s.you ? 'You' : s.players[lr.winner].name);
   const ranking = $derived(
     s.players.map((p) => ({ ...p, score: g.scores[p.seat] })).sort((a, b) => b.score - a.score),

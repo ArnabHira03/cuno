@@ -19,6 +19,7 @@
     y,
     compact = false,
     oncatch,
+    onselect,
   }: {
     player: PlayerInfo;
     count: number;
@@ -35,11 +36,15 @@
     y: number;
     compact?: boolean;
     oncatch: () => void;
+    /** Spectators: tap the seat to watch this player. */
+    onselect?: () => void;
   } = $props();
 
   const fan = $derived(Math.min(count, 7));
 </script>
 
+<!-- role/tabindex are only set together, when the seat is selectable -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   class="seat"
   class:compact
@@ -49,6 +54,12 @@
   style:--x="{x}%"
   style:--y="{y}%"
   data-seat-anchor={player.seat}
+  class:selectable={!!onselect}
+  role={onselect ? 'button' : undefined}
+  tabindex={onselect ? 0 : undefined}
+  title={onselect ? `Watch ${player.name}` : undefined}
+  onclick={onselect}
+  onkeydown={(e) => onselect && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onselect())}
 >
   <div class="avatar-wrap">
     <Avatar name={player.name} seat={player.seat} {active} {deadline} {total} away={!player.connected} />
@@ -78,7 +89,13 @@
     <span class="uno-badge">CUNO</span>
   {/if}
   {#if canCatch}
-    <button class="catch" onclick={oncatch}>Catch!</button>
+    <button
+      class="catch"
+      onclick={(e) => {
+        e.stopPropagation();
+        oncatch();
+      }}>Catch!</button
+    >
   {/if}
 
   {#if effect && effect.kind !== 'shake'}
@@ -115,6 +132,21 @@
 
   .avatar-wrap {
     position: relative;
+  }
+
+  .seat.selectable {
+    cursor: pointer;
+    border-radius: 14px;
+  }
+
+  .seat.selectable:hover .label,
+  .seat.selectable:focus-visible .label {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .seat.selectable:focus-visible {
+    outline: none;
   }
 
   .crown {

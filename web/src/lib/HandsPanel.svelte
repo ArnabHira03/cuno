@@ -10,12 +10,13 @@
 
   const KEY = 'cuno:handsPanel';
   const saved = storageGet(KEY);
-  // svelte-ignore state_referenced_locally
-  let collapsed = $state(saved === null ? startCollapsed : saved === '1');
+  // The viewer's own choice wins; until they make one, follow the (live) table size.
+  let choice = $state<boolean | null>(saved === null ? null : saved === '1');
+  const collapsed = $derived(choice ?? startCollapsed);
 
   function toggle() {
-    collapsed = !collapsed;
-    storageSet(KEY, collapsed ? '1' : '0');
+    choice = !collapsed;
+    storageSet(KEY, choice ? '1' : '0');
   }
 
   // Play order, starting with whoever plays after the followed player.

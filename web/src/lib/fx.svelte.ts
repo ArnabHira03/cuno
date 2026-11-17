@@ -3,7 +3,7 @@
 // missing (reconnect, reduced motion) the snapshot simply renders as-is.
 import { mount, unmount } from 'svelte';
 import Card from './Card.svelte';
-import type { Card as CardT, GameEvent, RoomState } from './types';
+import { viewSeat, type Card as CardT, type GameEvent, type RoomState } from './types';
 
 export interface SeatEffect {
   kind: 'plus' | 'skip' | 'uno' | 'shake' | 'timeout';
@@ -34,6 +34,12 @@ class Fx {
   }
 
   // ------------------------------------------------------------ public hooks
+
+  /** A spectator switched players: the bottom hand is a different hand now. */
+  resetHand() {
+    this.captured.clear();
+    this.hiddenHand = [];
+  }
 
   before(events: GameEvent[], prev: RoomState | null, next: RoomState) {
     this.captured.clear();
@@ -80,15 +86,18 @@ class Fx {
   }
 
   private async run(events: GameEvent[], prev: RoomState | null, next: RoomState) {
-    const me = next.you;
+    // `me` is the seat the table is drawn around (anchors, hand flights); `self` is your own seat,
+    // null for spectators, and decides when the wording says "you".
+    const me = viewSeat(next);
+    const self = next.you;
     const name = (seat: number | undefined) =>
-      seat === me ? 'You' : (next.players[seat ?? -1]?.name ?? 'Someone');
+      seat === self ? 'You' : (next.players[seat ?? -1]?.name ?? 'Someone');
     const animate = !!prev?.game && !!next.game && !this.reduced;
 
     for (const e of events) {
       switch (e.type) {
         case 'rejoined':
-          if (e.seat !== me && next.phase !== 'lobby') this.toast(`${name(e.seat)} is back`, 'good');
+          if (e.seat !== self && next.phase !== 'lobby') this.toast(`${name(e.seat)} is back`, 'good');
           break;
         case 'disconnected':
           this.toast(`${name(e.seat)} lost connection`, 'bad');
@@ -141,7 +150,7 @@ class Fx {
         }
         case 'skip':
           this.effect(e.seat!, 'skip');
-          if (e.seat === me) this.toast('You were skipped', 'bad');
+          if (e.seat === self) this.toast('You were skipped', 'bad');
           break;
         case 'reverse':
           this.toast('Direction reversed ⟲');
@@ -152,10 +161,10 @@ class Fx {
         case 'catch':
           this.effect(e.target, 'shake');
           this.toast(
-            e.target === me
+            e.target === self
               ? `${name(e.seat)} caught you — draw 2!`
               : `${name(e.seat)} caught ${name(e.target)} not calling CUNO! +2`,
-            e.target === me ? 'bad' : 'good',
+            e.target === self ? 'bad' : 'good',
           );
           break;
         case 'challenge': {
@@ -170,11 +179,11 @@ class Fx {
         case 'accept':
           break;
         case 'color_chosen':
-          if (e.seat !== me) this.toast(`${name(e.seat)} chose ${e.color}`);
+          if (e.seat !== self) this.toast(`${name(e.seat)} chose ${e.color}`);
           break;
         case 'timeout':
           this.effect(e.seat!, 'timeout');
-          this.toast(e.seat === me ? 'Time ran out — you drew a card' : `${name(e.seat)} ran out of time`);
+          this.toast(e.seat === self ? 'Time ran out — you drew a card' : `${name(e.seat)} ran out of time`);
           break;
         case 'reshuffle':
           this.toast('Discard pile reshuffled into the deck');
@@ -198,7 +207,7 @@ class Fx {
     for (let round = 0; round < 2; round++) {
       for (let s = 0; s < n; s++) {
         const to = this.seatRect(s);
-        if (to) void this.fly(null, from, to, { duration: 360, endScale: s === next.you ? 0.9 : 0.4 });
+        if (to) void this.fly(null, from, to, { duration: 360, endScale: s === viewSeat(next) ? 0.9 : 0.4 });
         await sleep(45);
       }
     }
