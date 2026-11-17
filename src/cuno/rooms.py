@@ -371,7 +371,22 @@ class Room:
             return
         for spec in self.spectators:
             if spec.conn is not None:
-                loop.create_task(_safe_send(spec.conn, error_message("closed", "This room has closed.")))
+                task = loop.create_task(_send_and_close(spec.conn, error_message("closed", "This room has closed.")))
+                _background.add(task)  # keep a reference so the task isn't garbage-collected mid-flight
+                task.add_done_callback(_background.discard)
+
+
+_background: set[asyncio.Task] = set()
+
+
+async def _send_and_close(conn: Connection, data: Any) -> None:
+    await _safe_send(conn, data)
+    close = getattr(conn, "close", None)
+    if close is not None:
+        try:
+            await close()
+        except Exception:
+            pass
 
 
 async def _safe_send(conn: Connection | None, data: Any) -> None:

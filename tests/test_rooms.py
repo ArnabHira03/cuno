@@ -12,9 +12,13 @@ from cuno.server import create_app
 class FakeConn:
     def __init__(self):
         self.sent = []
+        self.closed = False
 
     async def send_json(self, data):
         self.sent.append(data)
+
+    async def close(self):
+        self.closed = True
 
     def last(self, kind="state"):
         return next(m for m in reversed(self.sent) if m["type"] == kind)
@@ -292,11 +296,17 @@ async def test_spectator_actions_rejected():
 
 async def test_spectator_never_becomes_host():
     room, conns = await started_room(2)
+    p1_token = conns[1].last("welcome")["token"]
     spec = FakeConn()
     await room.join(spec, "W", None)
     for c in conns:
         await room.disconnect(c)
-    assert room.host is None or room.host in room.players
+    assert room.host is None
+    await room.handle(spec, {"type": "watch", "seat": 0})  # spectator activity changes nothing
+    assert room.host is None
+    back = FakeConn()
+    await room.join(back, "P1", p1_token)
+    assert room.host is room.players[1]
     room.close()
 
 
@@ -384,6 +394,7 @@ async def test_sweep_notifies_spectators():
     assert m.sweep(now=room.empty_since + 1) == 1
     await asyncio.sleep(0)
     assert spec.last("error")["code"] == "closed"
+    assert spec.closed
 
 
 def test_websocket_spectator_end_to_end():
@@ -408,3 +419,42 @@ def test_websocket_spectator_end_to_end():
         c.send_json({"type": "leave"})
         left = a.receive_json()
         assert left["state"]["spectators"] == [] and left["events"][0]["type"] == "spectator_left"
+
+
+async def test_actions_with_spectators_never_leak_hands_to_players():
+    room, conns = await started_room(3)
+    spec = FakeConn()
+    await room.join(spec, "W", None)
+    g = room.game
+    g.pending = None
+
+    async def draw():
+        seat = g.turn
+        await room.handle(conns[seat], {"type": "draw", "seq": room.version})
+        return seat
+
+    drawer = await draw()
+    for seat, c in enumerate(conns):
+        msg = c.last()
+        assert "hands" not in msg["state"]["game"]
+        assert {x["id"] for x in msg["state"]["game"]["hand"]} == {x.id for x in g.hands[seat]}
+        for ev in msg["events"]:
+            if "private" in ev:
+                assert ev["private"]["seat"] == seat == drawer
+    spec_events = spec.last()["events"]
+    draw_ev = next(e for e in spec_events if e["type"] == "draw")
+    # The spectator follows seat 0 (host): it gets the drawn ids only if seat 0 drew.
+    assert ("private" in draw_ev) == (drawer == 0)
+    assert set(spec.state["game"]["hands"]) == {"0", "1", "2"}
+
+    # After switching to the next drawer, the spectator gets that seat's private draw.
+    if g.drawn_card_id is not None:
+        await room.handle(conns[g.turn], {"type": "keep", "seq": room.version})
+    g.pending = None
+    await room.handle(spec, {"type": "watch", "seat": g.turn})
+    drawer = await draw()
+    draw_ev = next(e for e in spec.last()["events"] if e["type"] == "draw")
+    assert draw_ev["private"]["seat"] == drawer
+    for seat, c in enumerate(conns):
+        assert "hands" not in c.last()["state"]["game"]
+    room.close()

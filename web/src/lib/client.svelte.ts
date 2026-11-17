@@ -98,7 +98,13 @@ class Client {
       case 'error':
         if (FATAL.has(msg.code)) {
           this.stopped = true;
-          if (msg.code !== 'replaced') storageSet(tokenKey(this.code!), null);
+          if (msg.code !== 'replaced') {
+            storageSet(tokenKey(this.code!), null);
+            // The room is gone (e.g. swept): drop the frozen table so the home screen shows why.
+            this.state = null;
+            this.deadline = null;
+            this.ws?.close();
+          }
         }
         this.error = { code: msg.code, message: msg.message };
         break;

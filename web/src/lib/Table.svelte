@@ -25,6 +25,8 @@
   const name = (seat: number) => (mine(seat) ? 'You' : (s.players[seat]?.name ?? '?'));
 
   const myTurn = $derived(playing && mine(g.actor ?? -1));
+  /** The bottom seat (yours, or the followed player's) is the one acting: drives the turn ring, not controls. */
+  const bottomActive = $derived(playing && g.actor === me);
   const canDraw = $derived(playing && mine(g.turn) && !g.pending && g.drawn_card_id === null);
   const canKeep = $derived(playing && mine(g.turn) && !g.pending && g.drawn_card_id !== null);
   const challengeMe = $derived(playing && g.pending?.type === 'challenge' && mine(g.pending.victim));
@@ -173,7 +175,7 @@
     </div>
   </main>
 
-  <section class="me" class:active={myTurn}>
+  <section class="me" class:active={bottomActive}>
     {#key me}
     <div class="me-swap" in:fade={{ duration: spectator && !reduced ? 150 : 0 }}>
     <div class="me-bar">
@@ -182,7 +184,7 @@
           name={s.players[me].name}
           seat={me}
           size={44}
-          active={myTurn}
+          active={bottomActive}
           deadline={client.deadline}
           total={s.turn_seconds}
         />
