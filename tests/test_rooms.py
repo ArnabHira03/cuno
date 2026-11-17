@@ -90,12 +90,10 @@ async def test_draw_event_private_card_ids_only_to_drawer():
     room.close()
 
 
-async def test_cannot_join_started_game_but_can_rejoin_with_token():
+async def test_rejoin_with_token_after_start():
     room, conns = await room_with(2)
     token = conns[1].last("welcome")["token"]
     await room.handle(conns[0], {"type": "start"})
-    with pytest.raises(RoomError):
-        await room.join(FakeConn(), "Late", None)
 
     await room.disconnect(conns[1])
     assert conns[0].state["players"][1]["connected"] is False
@@ -215,3 +213,97 @@ def test_websocket_unknown_room():
     client = TestClient(create_app())
     with client.websocket_connect("/ws/QQQQ") as ws:
         assert ws.receive_json()["code"] == "not_found"
+
+
+# ------------------------------------------------------------------ spectators
+
+
+async def started_room(n=3):
+    room, conns = await room_with(n)
+    await room.handle(conns[0], {"type": "start"})
+    return room, conns
+
+
+def spectator_hand(room, seat):
+    return [c.to_dict() for c in room.game.hands[seat]]
+
+
+async def test_late_joiner_becomes_spectator_following_host():
+    room, conns = await started_room()
+    spec = FakeConn()
+    await room.join(spec, "Watcher", None)
+    w = spec.last("welcome")
+    assert w["seat"] is None and w["role"] == "spectator" and w["token"]
+    s = spec.state
+    assert s["role"] == "spectator" and s["you"] is None and s["watching"] == 0
+    assert set(s["game"]["hands"]) == {"0", "1", "2"}
+    assert len(room.players) == 3 and room.host is room.players[0]
+    room.close()
+
+
+async def test_player_snapshots_never_contain_other_hands_with_spectators():
+    room, conns = await started_room()
+    await room.join(FakeConn(), "Watcher", None)
+    for seat, c in enumerate(conns):
+        g = c.state["game"]
+        assert "hands" not in g
+        assert {x["id"] for x in g["hand"]} == {x.id for x in room.game.hands[seat]}
+        assert c.state["spectators"] == ["Watcher"] and c.state["role"] == "player"
+    room.close()
+
+
+async def test_spectator_join_and_leave_keep_version_and_deadline():
+    room, conns = await started_room()
+    v, d = room.version, room.deadline
+    spec = FakeConn()
+    await room.join(spec, "Watcher", None)
+    await room.disconnect(spec)
+    assert room.version == v and room.deadline == d
+    assert conns[0].state["spectators"] == []
+    room.close()
+
+
+async def test_watch_switches_only_that_spectator():
+    room, conns = await started_room()
+    a, b = FakeConn(), FakeConn()
+    await room.join(a, "A", None)
+    await room.join(b, "B", None)
+    before = len(b.sent)
+    v = room.version
+    await room.handle(a, {"type": "watch", "seat": 2})
+    assert a.state["watching"] == 2 and a.state["game"]["hand"] == spectator_hand(room, 2)
+    assert len(b.sent) == before and room.version == v
+    await room.handle(a, {"type": "watch", "seat": 9})
+    assert a.last("error")["code"] == "bad_seat"
+    room.close()
+
+
+async def test_spectator_actions_rejected():
+    room, conns = await started_room()
+    spec = FakeConn()
+    await room.join(spec, "W", None)
+    v = room.version
+    for msg in ({"type": "draw", "seq": room.version}, {"type": "start"}, {"type": "catch", "target": 0}):
+        await room.handle(spec, msg)
+        assert spec.last("error")["code"] == "spectator"
+    assert room.version == v
+    room.close()
+
+
+async def test_spectator_never_becomes_host():
+    room, conns = await started_room(2)
+    spec = FakeConn()
+    await room.join(spec, "W", None)
+    for c in conns:
+        await room.disconnect(c)
+    assert room.host is None or room.host in room.players
+    room.close()
+
+
+async def test_spectator_only_room_pauses_and_is_sweepable():
+    room, conns = await started_room(2)
+    await room.join(FakeConn(), "W", None)
+    for c in conns:
+        await room.disconnect(c)
+    assert room.timer is None and room.empty_since is not None
+    room.close()

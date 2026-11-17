@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 from .engine import MAX_PLAYERS, MIN_PLAYERS, Event, Game, IllegalMove, Phase
 from .protocol import GAME_ACTIONS, SEQUENCED, client_message
-from .views import events_for, snapshot_for
+from .views import events_for, snapshot_for, spectator_snapshot_for
 
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ"  # no I or O
 CODE_LENGTH = 4
@@ -45,6 +45,19 @@ class Player:
         return self.conn is not None
 
 
+@dataclass(eq=False)
+class Spectator:
+    token: str
+    name: str
+    conn: Connection | None = None
+    # The person being followed, not a seat number: seats renumber between games.
+    watching: Player | None = None
+
+    @property
+    def connected(self) -> bool:
+        return self.conn is not None
+
+
 def error_message(code: str, message: str) -> dict[str, Any]:
     return {"type": "error", "code": code, "message": message}
 
@@ -63,6 +76,7 @@ class Room:
         self.away_seconds = away_seconds
         self.rng = rng or random.Random()
         self.players: list[Player] = []
+        self.spectators: list[Spectator] = []
         self.host: Player | None = None
         self.game: Game | None = None
         self.version = 0
@@ -80,13 +94,44 @@ class Room:
     def player_for(self, conn: Connection) -> Player | None:
         return next((p for p in self.players if p.conn is conn), None)
 
+    def spectator_for(self, conn: Connection) -> Spectator | None:
+        return next((s for s in self.spectators if s.conn is conn), None)
+
+    def _default_watch(self) -> Player | None:
+        if self.host in self.players:
+            return self.host
+        return next((p for p in self.players if p.connected), self.players[0] if self.players else None)
+
+    def _watch_seat(self, spec: Spectator) -> int | None:
+        if spec.watching not in self.players:
+            spec.watching = self._default_watch()
+        return None if spec.watching is None else self.players.index(spec.watching)
+
     def snapshot_for(self, player: Player) -> dict[str, Any]:
         seat = self.players.index(player)
+        return {
+            **self._base_snapshot(),
+            "role": "player",
+            "you": seat,
+            "watching": None,
+            "game": snapshot_for(self.game, seat) if self.game else None,
+        }
+
+    def spectator_snapshot(self, spec: Spectator) -> dict[str, Any]:
+        seat = self._watch_seat(spec)
+        return {
+            **self._base_snapshot(),
+            "role": "spectator",
+            "you": None,
+            "watching": seat,
+            "game": spectator_snapshot_for(self.game, seat) if self.game and seat is not None else None,
+        }
+
+    def _base_snapshot(self) -> dict[str, Any]:
         return {
             "code": self.code,
             "version": self.version,
             "phase": self.phase,
-            "you": seat,
             "host": self.players.index(self.host) if self.host in self.players else None,
             "players": [
                 {"seat": i, "name": p.name, "connected": p.connected}
@@ -95,17 +140,22 @@ class Room:
             "turn_seconds": self.turn_seconds,
             # Relative, so client/server clock skew doesn't matter.
             "time_left_ms": max(0, int((self.deadline - time.time()) * 1000)) if self.deadline else None,
-            "game": snapshot_for(self.game, seat) if self.game else None,
+            "spectators": [s.name for s in self.spectators if s.connected],
         }
 
     # ------------------------------------------------------------ membership
 
-    async def join(self, conn: Connection, name: str, token: str | None) -> Player:
+    async def join(self, conn: Connection, name: str, token: str | None) -> Player | None:
+        """Join as a player, or as a spectator (returns None) once the game has started."""
         name = " ".join(name.split())[:16]
         if not name:
             raise RoomError("bad_name", "Pick a nickname.")
         async with self.lock:
             player = next((p for p in self.players if token and p.token == token), None)
+            spec = next((s for s in self.spectators if token and s.token == token), None)
+            if player is None and (spec is not None or self.game is not None):
+                await self._join_spectator(conn, name, spec)
+                return None
             if player is not None:
                 old = player.conn
                 player.conn = conn
@@ -125,13 +175,31 @@ class Room:
             self.empty_since = None
             await _safe_send(
                 conn,
-                {"type": "welcome", "seat": self.players.index(player), "token": player.token},
+                {"type": "welcome", "seat": self.players.index(player), "token": player.token, "role": "player"},
             )
             await self._commit([event])
             return player
 
+    async def _join_spectator(self, conn: Connection, name: str, spec: Spectator | None) -> None:
+        """Caller holds the lock. Spectators never touch the version, timer, host or empty_since."""
+        if spec is None:
+            spec = Spectator(token=secrets.token_urlsafe(16), name=name, conn=conn, watching=self._default_watch())
+            self.spectators.append(spec)
+        else:
+            old = spec.conn
+            spec.conn = conn
+            if old is not None and old is not conn:
+                await _safe_send(old, error_message("replaced", "Opened in another tab."))
+        await _safe_send(conn, {"type": "welcome", "seat": None, "token": spec.token, "role": "spectator"})
+        await self._broadcast([{"type": "spectator_joined", "name": spec.name}])
+
     async def disconnect(self, conn: Connection) -> None:
         async with self.lock:
+            spec = self.spectator_for(conn)
+            if spec is not None:
+                spec.conn = None
+                await self._broadcast([{"type": "spectator_left", "name": spec.name}])
+                return
             player = self.player_for(conn)
             if player is None:
                 return
@@ -160,7 +228,11 @@ class Room:
         async with self.lock:
             player = self.player_for(conn)
             if player is None:
-                await _safe_send(conn, error_message("not_joined", "Join the room first."))
+                spec = self.spectator_for(conn)
+                if spec is not None:
+                    await self._spectator_message(spec, msg.model_dump())
+                else:
+                    await _safe_send(conn, error_message("not_joined", "Join the room first."))
                 return
             try:
                 events = self._apply(player, msg.model_dump())
@@ -170,6 +242,17 @@ class Room:
                     await _safe_send(conn, self._state_message(player, []))
                 return
             await self._commit(events)
+
+    async def _spectator_message(self, spec: Spectator, msg: dict[str, Any]) -> None:
+        if msg["type"] != "watch":
+            await _safe_send(spec.conn, error_message("spectator", "Spectators can't play."))
+            return
+        seat = msg["seat"]
+        if not 0 <= seat < len(self.players):
+            await _safe_send(spec.conn, error_message("bad_seat", "There's nobody in that seat."))
+            return
+        spec.watching = self.players[seat]
+        await _safe_send(spec.conn, {"type": "state", "state": self.spectator_snapshot(spec), "events": []})
 
     def _apply(self, player: Player, msg: dict[str, Any]) -> list[Event]:
         kind = msg["type"]
@@ -223,9 +306,23 @@ class Room:
         """Bump the version, reset the timer and send everyone their view. Caller holds the lock."""
         self.version += 1
         self._schedule_timer()
+        await self._broadcast(events)
+
+    async def _broadcast(self, events: list[Event]) -> None:
+        """Send everyone their view without touching the version or timer. Caller holds the lock."""
         sends = [
             _safe_send(p.conn, self._state_message(p, events)) for p in self.players if p.conn is not None
         ]
+        for spec in self.spectators:
+            if spec.conn is not None:
+                state = self.spectator_snapshot(spec)
+                seat = state["watching"]
+                sends.append(
+                    _safe_send(
+                        spec.conn,
+                        {"type": "state", "state": state, "events": events_for(events, -1 if seat is None else seat)},
+                    )
+                )
         await asyncio.gather(*sends)
 
     # ------------------------------------------------------------------ timer
