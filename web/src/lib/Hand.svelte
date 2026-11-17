@@ -2,6 +2,7 @@
   import { flip } from 'svelte/animate';
   import { fly } from 'svelte/transition';
   import Card from './Card.svelte';
+  import { sortCards } from './cardSort';
   import { touchHand } from './touchHand';
   import type { Card as CardT } from './types';
 
@@ -21,17 +22,7 @@
     onplay: (card: CardT) => void;
   } = $props();
 
-  const COLOR_ORDER = { red: 0, yellow: 1, green: 2, blue: 3 } as const;
-  const KIND_ORDER = { number: 0, skip: 1, reverse: 2, draw2: 3, wild: 4, wild4: 5 } as const;
-  const sorted = $derived(
-    [...cards].sort(
-      (a, b) =>
-        (a.color ? COLOR_ORDER[a.color] : 9) - (b.color ? COLOR_ORDER[b.color] : 9) ||
-        KIND_ORDER[a.kind] - KIND_ORDER[b.kind] ||
-        (a.value ?? 0) - (b.value ?? 0) ||
-        a.id - b.id,
-    ),
-  );
+  const sorted = $derived(sortCards(cards));
 
   let width = $state(800);
   let cardWidth = $state(96);
